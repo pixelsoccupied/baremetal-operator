@@ -761,6 +761,12 @@ func (r *BareMetalHostReconciler) registerHost(prov provisioner.Provisioner, inf
 		// No need to create PreprovisioningImage if host is not yet registered
 		// or is externally provisioned
 		preprovImgFormats = nil
+	case metal3v1alpha1.StateDeprovisioning, metal3v1alpha1.StateDeleting:
+		// This is an edge case when the deprovisioning happens because the namespace with BMHs is being deleted.
+		// In this case, it is not possible to create a PreprovisioningImage if it's somehow missing.
+		if info.host.Spec.AutomatedCleaningMode == metal3v1alpha1.CleaningModeDisabled {
+			preprovImgFormats = nil
+		}
 	}
 
 	preprovImg, err := r.getPreprovImage(info, preprovImgFormats)
@@ -832,9 +838,12 @@ func (r *BareMetalHostReconciler) registerHost(prov provisioner.Provisioner, inf
 
 	// Create the hostFirmwareSettings resource with same host name/namespace if it doesn't exist
 	if info.host.Name != "" {
-		if err = r.createHostFirmwareSettings(info); err != nil {
-			info.log.Info("failed creating hostfirmwaresettings")
-			return actionError{errors.Wrap(err, "failed creating hostFirmwareSettings")}
+		if info.host.Spec.AutomatedCleaningMode == metal3v1alpha1.CleaningModeDisabled && !info.host.DeletionTimestamp.IsZero() {
+			r.Log.Info("will not attempt to create new hostFirmwareSettings")
+		} else {
+			if err = r.createHostFirmwareSettings(info); err != nil {
+				return actionError{errors.Wrap(err, "failed creating hostFirmwareSettings")}
+			}
 		}
 	}
 
